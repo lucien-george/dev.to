@@ -189,6 +189,7 @@ class User < ApplicationRecord
 
   after_create_commit :send_welcome_notification, :estimate_default_language
   after_commit :index_to_elasticsearch, on: %i[create update]
+  after_commit :reindex_related_content, if: :name_changed?, on: %i[create update]
   after_commit :remove_from_elasticsearch, on: [:destroy]
 
   algoliasearch per_environment: true, enqueue: :trigger_delayed_index do
@@ -515,6 +516,16 @@ class User < ApplicationRecord
 
   def index_id
     "users-#{id}"
+  end
+
+  def name_changed?
+    saved_changes["name"] || saved_changes["username"]
+  end
+
+  def reindex_related_content
+    Search::ReindexRelatedDocuments.perform_async(self.class.name, id, "articles")
+    Search::ReindexRelatedDocuments.perform_async(self.class.name, id, "created_podcasts")
+    Search::ReindexRelatedDocuments.perform_async(self.class.name, id, "chat_channel_memberships")
   end
 
   def estimate_default_language
